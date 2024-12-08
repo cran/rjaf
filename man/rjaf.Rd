@@ -6,7 +6,7 @@
 \usage{
 rjaf(
   data.trainest,
-  data.validation,
+  data.heldout,
   y,
   id,
   trt,
@@ -37,7 +37,7 @@ rjaf(
 row corresponds to an individual and columns contain information on treatments,
 covariates, probabilities of treatment assignment, and observed outcomes.}
 
-\item{data.validation}{input data used for validation with the same row and
+\item{data.heldout}{input data used for validation with the same row and
 column information as in \code{data.trainest}.}
 
 \item{y}{a character string denoting the column name of outcomes.}
@@ -50,7 +50,7 @@ column information as in \code{data.trainest}.}
 
 \item{prob}{a character string denoting the column name of probabilities of
 treatment assignment. If missing, a column named "prob" will be added to \code{data.trainest} and
-\code{data.validation} indicating simple random treatment assignment.}
+\code{data.heldout} indicating simple random treatment assignment.}
 
 \item{ntrt}{number of treatments randomly sampled at each split. It should be
 at most equal to the number of unique treatments available. The default value is 5.}
@@ -119,10 +119,10 @@ returns a list of two objects: a tibble named as \code{res} consisting of indivi
 IDs, cluster identifiers, and predicted outcomes, and a data frame named as
 \code{clustering} consisting of cluster identifiers, probabilities of being assigned
 to the clusters, and treatment arms. Otherwise, \code{rjaf} simply returns a tibble
-of individual IDs, optimal treatment arms identified by the algorithm, treatment
-clusters if \code{clus.tree.growing} is \code{TRUE}, and predicted optimal outcomes (ending
-with \code{.rjaf}). If counterfactual outcomes are also present, they will be included
-in the tibble along with the column of predicted outcomes (ending with \code{.cf}).
+of individual IDs (\code{id}), optimal treatment arms identified by the algorithm (\code{trt.rjaf}), treatment
+clusters (\code{clus.rjaf}) if \code{clus.tree.growing} is \code{TRUE}, and predicted optimal outcomes (\code{Y.rjaf}).
+If counterfactual outcomes are also present, they will be included
+in the tibble along with the column of predicted outcomes (\code{Y.cf}).
 }
 \description{
 This algorithm trains a joint forest model to estimate the optimal treatment assignment
@@ -172,10 +172,10 @@ sim.data <- function(n, K, gamma, sigma, prob=rep(1,K+1)/(K+1)) {
 n <- 200; K <- 3; gamma <- 10; sigma <- 10
 Example_data <- sim.data(n, K, gamma, sigma)
 Example_trainest <- Example_data \%>\% slice_sample(n = floor(0.5 * nrow(Example_data)))
-Example_valid <- Example_data \%>\% filter(!id \%in\% Example_trainest$id)
+Example_heldout <- Example_data \%>\% filter(!id \%in\% Example_trainest$id)
 id <- "id"; y <- "Y"; trt <- "trt"
 vars <- paste0("X", 1:3)
-forest.reg <- rjaf(Example_trainest, Example_valid, y, id, trt, vars, ntrt = 4, ntree = 100,
+forest.reg <- rjaf(Example_trainest, Example_heldout, y, id, trt, vars, ntrt = 4, ntree = 100,
                    clus.tree.growing = FALSE)
 
 }
