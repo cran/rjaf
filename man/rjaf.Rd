@@ -37,12 +37,13 @@ rjaf(
 row corresponds to an individual and columns contain information on treatments,
 covariates, probabilities of treatment assignment, and observed outcomes.}
 
-\item{data.heldout}{input data used for validation with the same row and
-column information as in \code{data.trainest}.}
+\item{data.heldout}{input data used for validation with covariates
+and optional counterfactual outcomes.}
 
 \item{y}{a character string denoting the column name of outcomes.}
 
-\item{id}{a character string denoting the column name of individual IDs.}
+\item{id}{a character string denoting the column name of individual IDs. If missing,
+a column of integers named "id" will be added to \code{data.trainest} and \code{data.heldout}.}
 
 \item{trt}{a character string denoting the column name of treatments.}
 
@@ -118,11 +119,13 @@ If \code{clus.tree.growing} and \code{clus.outcome.avg} are \code{TRUE}, \code{r
 returns a list of two objects: a tibble named as \code{res} consisting of individual
 IDs, cluster identifiers, and predicted outcomes, and a data frame named as
 \code{clustering} consisting of cluster identifiers, probabilities of being assigned
-to the clusters, and treatment arms. Otherwise, \code{rjaf} simply returns a tibble
-of individual IDs (\code{id}), optimal treatment arms identified by the algorithm (\code{trt.rjaf}), treatment
+to the clusters, and treatment arms. Otherwise, \code{rjaf}  returns a list of two tibbles
+named \code{res} and \code{counterfactuals}. \code{res} consists of individual IDs (\code{id}),
+optimal treatment arms identified by the algorithm (\code{trt.rjaf}), treatment
 clusters (\code{clus.rjaf}) if \code{clus.tree.growing} is \code{TRUE}, and predicted optimal outcomes (\code{Y.rjaf}).
 If counterfactual outcomes are also present, they will be included
-in the tibble along with the column of predicted outcomes (\code{Y.cf}).
+in \code{res} along with the column of predicted outcomes (\code{Y.cf}). \code{counterfactuals} consists of
+counterfactual estimates of every available treatment.
 }
 \description{
 This algorithm trains a joint forest model to estimate the optimal treatment assignment

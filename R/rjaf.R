@@ -24,10 +24,11 @@
 #' @param data.trainest input data used for training and estimation, where each
 #' row corresponds to an individual and columns contain information on treatments,
 #' covariates, probabilities of treatment assignment, and observed outcomes.
-#' @param data.heldout input data used for validation with the same row and
-#' column information as in `data.trainest`.
+#' @param data.heldout input data used for validation with covariates
+#' and optional counterfactual outcomes.
 #' @param y a character string denoting the column name of outcomes.
-#' @param id a character string denoting the column name of individual IDs.
+#' @param id a character string denoting the column name of individual IDs. If missing, 
+#' a column of integers named "id" will be added to `data.trainest` and `data.heldout`.
 #' @param trt a character string denoting the column name of treatments.
 #' @param vars a vector of character strings denoting the column names of covariates. 
 #' @param prob a character string denoting the column name of probabilities of
@@ -82,11 +83,13 @@
 #' returns a list of two objects: a tibble named as `res` consisting of individual
 #' IDs, cluster identifiers, and predicted outcomes, and a data frame named as
 #' `clustering` consisting of cluster identifiers, probabilities of being assigned
-#' to the clusters, and treatment arms. Otherwise, `rjaf` simply returns a tibble
-#' of individual IDs (`id`), optimal treatment arms identified by the algorithm (`trt.rjaf`), treatment
+#' to the clusters, and treatment arms. Otherwise, `rjaf`  returns a list of two tibbles 
+#' named `res` and `counterfactuals`. `res` consists of individual IDs (`id`), 
+#' optimal treatment arms identified by the algorithm (`trt.rjaf`), treatment
 #' clusters (`clus.rjaf`) if `clus.tree.growing` is `TRUE`, and predicted optimal outcomes (`Y.rjaf`). 
 #' If counterfactual outcomes are also present, they will be included
-#' in the tibble along with the column of predicted outcomes (`Y.cf`).
+#' in `res` along with the column of predicted outcomes (`Y.cf`). `counterfactuals` consists of 
+#' counterfactual estimates of every available treatment. 
 #' @export
 #'
 #' @examples
@@ -125,6 +128,7 @@
 #' @importFrom stats kmeans as.formula predict
 #' @importFrom rlang := 
 #' @importFrom MASS mvrnorm
+#' @importFrom stats setNames
 #' @import dplyr forcats magrittr readr tibble stringr
 #'
 #' @references 
@@ -150,17 +154,21 @@ rjaf <- function(data.trainest, data.heldout, y, id, trt, vars, prob,
                  resid=TRUE, clus.tree.growing=FALSE, clus.outcome.avg=FALSE,
                  clus.max=10, reg=TRUE, impute=TRUE,
                  setseed=FALSE, seed=1, nfold=5) {
-  trts <- unique(pull(data.trainest, trt))
+  trts <- sort(unique(pull(data.trainest, trt)))
   if (ntrt>length(trts)) stop("Invalid ntrt!")
   if (nvar>length(vars)) stop("Invalid nvar!")
+  if (missing(id)) {
+    id <- "id"
+    data.trainest <- data.trainest %>% mutate(id=1:nrow(data.trainest))
+    data.heldout <- data.heldout %>% mutate(id=(1+nrow(data.trainest)):(nrow(data.trainest)+nrow(data.heldout)))
+  }
   if (missing(prob)) { # default to simple random treatment assignment
     prob <- "prob"
-    proportions <- (table(data.trainest$trt) + table(data.heldout$trt)) / (nrow(data.trainest) + nrow(data.heldout))
-    data.trainest <- data.trainest %>% mutate(!!(prob):= proportions[as.character(trt)])
-    data.heldout <- data.heldout %>% mutate(!!(prob):= proportions[as.character(trt)])
+    proportions <- table(data.trainest %>% pull(trt)) / (nrow(data.trainest))
+    data.trainest <- data.trainest %>% mutate(!!(prob):=proportions[as.character(!!sym(trt))])
   }
   data.trainest <- mutate(data.trainest, across(c(id, trt), as.character))
-  data.heldout <- mutate(data.heldout, across(c(id, trt), as.character))
+  data.heldout <- mutate(data.heldout, id=as.character(!!sym(id)))
   if (resid) {
     data.trainest <- residualize(data.trainest, y, vars, nfold)
   } else { # if resid is FALSE, the two columns of outcomes are identical.
@@ -226,9 +234,13 @@ rjaf <- function(data.trainest, data.heldout, y, id, trt, vars, prob,
              as.matrix(dplyr::select(data.heldout, all_of(vars))),
              nstr, nvar, lambda1, lambda2, ipw, nodesize, ntree,
              prop.train, eps, reg, impute, setseed, seed)
+  
+  counterfactuals <- as_tibble(ls.forest$Y.cf, .name_repair = "minimal") %>%
+     setNames(paste0(y,"_", trts, ".rjaf"))
+  
   if (clus.tree.growing & clus.outcome.avg) {
     res <- tibble(!!(id):=as.character(pull(data.heldout, id)),
-                  cluster=as.character(clus[ls.forest$trt.rjaf]),
+                  clus.rjaf=as.character(clus[ls.forest$trt.rjaf]),
                   !!(paste0(y, ".rjaf")):=as.numeric(ls.forest$Y.pred))
     return(list(res=res, clustering=df))
   } else {
@@ -249,7 +261,9 @@ rjaf <- function(data.trainest, data.heldout, y, id, trt, vars, prob,
         inner_join(res, by=c(id, trt)) %>%
         rename_with(~str_c(.,".rjaf"), trt) %>%
         rename_with(~str_c(.,".cf"), y)
+    } else {
+      res <- res %>% rename_with(~str_c(.,".rjaf"), trt)
     }
-    return(res)
+    return(list(res=res, counterfactuals=counterfactuals))
   }
 }
