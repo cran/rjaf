@@ -71,8 +71,7 @@
 #' when the arm has no observation. If `FALSE`, the within-leaf average outcome
 #' is set to zero when the arm has no observation. The default value is `TRUE`.
 #' @param setseed a logical indicator. If `TRUE`, a seed is set through the
-#' argument `seed` below and passed to the function `rjaf_cpp`.
-#' The default value is `FALSE`.
+#' argument `seed` below. The default value is `FALSE`.
 #' @param seed an integer used as a random seed if `setseed=TRUE`.
 #' The default value is 1.
 #' @param nfold the number of folds used for cross-validation in outcome
@@ -80,16 +79,18 @@
 #' 
 #' 
 #' @return If `clus.tree.growing` and `clus.outcome.avg` are `TRUE`, `rjaf`
-#' returns a list of two objects: a tibble named as `res` consisting of individual
+#' returns a list of two objects: a tibble named as `fitted` consisting of individual
 #' IDs, cluster identifiers, and predicted outcomes, and a data frame named as
 #' `clustering` consisting of cluster identifiers, probabilities of being assigned
 #' to the clusters, and treatment arms. Otherwise, `rjaf`  returns a list of two tibbles 
-#' named `res` and `counterfactuals`. `res` consists of individual IDs (`id`), 
+#' named `fitted` and `counterfactuals`. `fitted` consists of individual IDs (`id`), 
 #' optimal treatment arms identified by the algorithm (`trt.rjaf`), treatment
 #' clusters (`clus.rjaf`) if `clus.tree.growing` is `TRUE`, and predicted optimal outcomes (`Y.rjaf`). 
-#' If counterfactual outcomes are also present, they will be included
-#' in `res` along with the column of predicted outcomes (`Y.cf`). `counterfactuals` consists of 
-#' counterfactual estimates of every available treatment. 
+#' If counterfactual outcomes are also present, a column `Y.cf` will be included
+#' in `fitted` along with `Y.rjaf`. `counterfactuals` contains estimated 
+#' counterfactual outcomes for every treatment arm. If `clus.tree.growing` is `TRUE`,
+#' `rjaf` will also return a tibble `xwalk` that includes `trt` as the treatments 
+#' and `cluster` as their assigned cluster memberships based on k-means clustering. 
 #' @export
 #'
 #' @examples
@@ -115,6 +116,7 @@
 #' }
 #' 
 #' n <- 200; K <- 3; gamma <- 10; sigma <- 10
+#' set.seed(1)
 #' Example_data <- sim.data(n, K, gamma, sigma)
 #' Example_trainest <- Example_data %>% slice_sample(n = floor(0.5 * nrow(Example_data)))
 #' Example_heldout <- Example_data %>% filter(!id %in% Example_trainest$id)
@@ -152,8 +154,9 @@ rjaf <- function(data.trainest, data.heldout, y, id, trt, vars, prob,
                  ntrt=5, nvar=3, lambda1=0.5, lambda2=0.5, ipw=TRUE,
                  nodesize=5, ntree=1000, prop.train=0.5, eps=0.1,
                  resid=TRUE, clus.tree.growing=FALSE, clus.outcome.avg=FALSE,
-                 clus.max=10, reg=TRUE, impute=TRUE,
+                 clus.max=10, reg=TRUE, impute=TRUE, 
                  setseed=FALSE, seed=1, nfold=5) {
+  if (setseed) {set.seed(seed)}
   trts <- sort(unique(pull(data.trainest, trt)))
   if (ntrt>length(trts)) stop("Invalid ntrt!")
   if (nvar>length(vars)) stop("Invalid nvar!")
@@ -193,7 +196,7 @@ rjaf <- function(data.trainest, data.heldout, y, id, trt, vars, prob,
                                      as.character(trts))),
                    as.matrix(dplyr::select(data.onefold, all_of(vars))),
                    ntrt, nvar, lambda1, lambda2, ipw, nodesize, ntree,
-                   prop.train, eps, reg, impute, setseed, seed)$Y.cf
+                   prop.train, eps, reg, impute)$Y.cf
         }))), i, nstart=5))
     vec.prop <- sapply(ls.kmeans, function(list) list$betweenss/list$totss)
     cluster <- ls.kmeans[[which.max(diff(vec.prop))+1]]$cluster
@@ -233,16 +236,16 @@ rjaf <- function(data.trainest, data.heldout, y, id, trt, vars, prob,
              str.tree.growing, prob.tree.growing, str.outcome.avg,
              as.matrix(dplyr::select(data.heldout, all_of(vars))),
              nstr, nvar, lambda1, lambda2, ipw, nodesize, ntree,
-             prop.train, eps, reg, impute, setseed, seed)
-  
-  counterfactuals <- as_tibble(ls.forest$Y.cf, .name_repair = "minimal") %>%
-     setNames(paste0(y,"_", trts, ".rjaf"))
-  
+             prop.train, eps, reg, impute)
+  counterfactuals <- ls.forest$Y.cf %>% as_tibble(.name_repair="minimal") %>%
+    setNames(paste0(y,"_", trts, ".rjaf")) %>%
+    mutate(!!(id):=as.character(pull(data.heldout, id))) %>%
+    relocate(!!id)
   if (clus.tree.growing & clus.outcome.avg) {
     res <- tibble(!!(id):=as.character(pull(data.heldout, id)),
                   clus.rjaf=as.character(clus[ls.forest$trt.rjaf]),
                   !!(paste0(y, ".rjaf")):=as.numeric(ls.forest$Y.pred))
-    return(list(res=res, clustering=df))
+    return(list(fitted=res, clustering=df, xwalk=xwalk))
   } else {
     res <- tibble(!!(id):=as.character(pull(data.heldout, id)),
                   !!(trt):=as.character(trts[ls.forest$trt.rjaf]),
@@ -264,6 +267,10 @@ rjaf <- function(data.trainest, data.heldout, y, id, trt, vars, prob,
     } else {
       res <- res %>% rename_with(~str_c(.,".rjaf"), trt)
     }
-    return(list(res=res, counterfactuals=counterfactuals))
+    if (clus.tree.growing) {
+      return(list(fitted=res, counterfactuals=counterfactuals, xwalk=xwalk))
+    } else {
+      return(list(fitted=res, counterfactuals=counterfactuals))
+    }
   }
 }
